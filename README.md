@@ -17,14 +17,21 @@ GitHub Pagesで動作する静的PWAです。サーバー・DBは不要です。
 - CBT Simulation：B-1/B-2の入力練習
 - PWA / オフライン対応
 
-## GitHub Pages への配置
+## GitHub Pages での構成
 
-1. このフォルダの中身をGitHubリポジトリのルートへアップロード
-2. GitHubの Settings → Pages
-3. Branch を `main`、Folder を `/ (root)` にして公開
-4. 公開URLをスマホで開く
-5. iPhone: Safariの共有 →「ホーム画面に追加」
-   Android: Chromeのメニュー →「アプリをインストール」または「ホーム画面に追加」
+主要ファイルはすべてリポジトリ直下を正本とします。
+
+- `index.html`
+- `styles.css`
+- `app.js`
+- `questions.js`
+- `glossary.js`
+- `manifest.webmanifest`
+- `sw.js`
+- `icons/`
+
+`index.html` と Service Worker はルート直下の `questions.js` / `glossary.js` を読み込みます。
+同じデータファイルを別フォルダへ重複配置しない運用にしています。
 
 ## 重要
 
@@ -33,5 +40,6 @@ GitHub Pagesで動作する静的PWAです。サーバー・DBは不要です。
 
 ## 問題データ
 
-`data/questions.js` を追加・修正すれば問題を増やせます。
+`questions.js` を追加・修正すれば問題を増やせます。
+専門用語は `glossary.js` で管理します。
 第1版はアプリ構造と学習体験を確認するため、すべてオリジナル練習問題です。
