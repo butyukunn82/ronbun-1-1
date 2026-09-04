@@ -7,6 +7,7 @@ const skillNames=["設問分類","根拠探索","因果構築","答案生成","�
 let session=[], idx=0, answered=false, startedAt=0, currentMode="classify", deferredPrompt=null, examInterval=null, examRemaining=0;
 
 function save(){localStorage.setItem(STORE,JSON.stringify(state))}
+function esc(s=""){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 function stat(id){return state.stats[id] ||= {seen:0,correct:0,streak:0,mastery:0,due:today(),avgMs:0,lastConfidence:null}}
 function scoreItem(q,s){
  const acc=s.seen?s.correct/s.seen:0;
@@ -97,9 +98,13 @@ function answer(choice,btn,skipped=false){
  const buttons=$$("#answerArea button"); buttons.forEach((b,i)=>{b.disabled=true;if(i===q.answer)b.classList.add("correct")});
  if(!ok && btn)btn.classList.add("wrong");
  const fb=$("#feedback"); fb.classList.remove("hidden","good","bad"); fb.classList.add(ok?"good":"bad");
- fb.innerHTML=`<strong>${ok?"✓ 的中":"× ずれています"}　${(ms/1000).toFixed(1)}秒</strong>${q.explain}
+ const glossaryButton=q.term && ST_GLOSSARY.some(g=>g.term===q.term)
+   ? `<button type="button" class="feedback-vocab" data-open-glossary="${esc(q.term)}">用語解説：${esc(q.term)}を見る</button>` : "";
+ fb.innerHTML=`<strong>${ok?"✓ 的中":"× ずれています"}　${(ms/1000).toFixed(1)}秒</strong>${q.explain}${glossaryButton}
    <div class="confidence"><span>自信度：</span><button data-c="3">自信あり</button><button data-c="2">普通</button><button data-c="1">勘</button></div>`;
  $$("#feedback [data-c]").forEach(b=>b.onclick=()=>{s.lastConfidence=+b.dataset.c;save();$$("#feedback [data-c]").forEach(x=>x.disabled=true)});
+ const glossaryLink=$("#feedback [data-open-glossary]");
+ if(glossaryLink)glossaryLink.onclick=()=>{const term=glossaryLink.dataset.openGlossary;setView("vocabView");setTimeout(()=>openVocabTerm(term,true),80)};
  $("#nextBtn").classList.remove("hidden");
 }
 $("#skipBtn").onclick=()=>answer(-1,null,true);
@@ -112,12 +117,62 @@ function renderVocab(){
  let counters=[0,0,0,0];
  ST_GLOSSARY.forEach(g=>{const l=state.vocab[g.term]?.level||0;if(l>=1)counters[0]++;if(l>=2)counters[1]++;if(l>=3)counters[2]++;if(l>=4)counters[3]++});
  $("#vRecognize").textContent=counters[0];$("#vDistinguish").textContent=counters[1];$("#vApply").textContent=counters[2];$("#vActive").textContent=counters[3];
+ const known=new Set(ST_GLOSSARY.map(g=>g.term));
+ const chips=words=>(words||[]).map(word=>known.has(word)
+   ? `<button type="button" class="term-chip linked" data-vocab-link="${esc(word)}">${esc(word)}</button>`
+   : `<span class="term-chip">${esc(word)}</span>`).join("");
  $("#vocabList").innerHTML=ST_GLOSSARY.map(g=>{
    const l=state.vocab[g.term]?.level||0;
-   return `<div class="vocab-item card"><div class="vocab-term">${g.term}<small style="display:block;color:#6b7280;font-size:10px">${g.family}</small></div>
-   <div class="vocab-desc">${g.meaning}<br><small>使い方：${g.usage}</small></div>
-   <div class="level-dots" title="習熟度">${[1,2,3,4,5].map(n=>`<i class="${l>=n?"on":""}"></i>`).join("")}</div></div>`
+   const confusable=(g.confusableWords||[]).map(c=>{
+     const term=typeof c==="string"?c:c.term, point=typeof c==="string"?"":c.point;
+     const head=known.has(term)?`<button type="button" class="compare-term" data-vocab-link="${esc(term)}">${esc(term)}</button>`:`<b>${esc(term)}</b>`;
+     return `<div class="compare-item">${head}<span>${esc(point)}</span></div>`;
+   }).join("");
+   return `<article class="vocab-card card" data-term="${esc(g.term)}" id="vocab-${esc(g.term)}">
+     <button type="button" class="vocab-summary" data-vocab-toggle="${esc(g.term)}" aria-expanded="false">
+       <span class="vocab-title-row"><span class="vocab-term">${esc(g.term)}</span><span class="vocab-reading">${esc(g.reading||"")}</span></span>
+       <span class="vocab-one-line">${esc(g.oneLine||g.meaning||"")}</span>
+       <span class="vocab-summary-foot"><span class="vocab-family">${esc(g.family||"")}</span><span>タップして詳しく見る <b class="vocab-chevron">⌄</b></span></span>
+     </button>
+     <div class="vocab-detail hidden">
+       <div class="vocab-name-block">
+         <div><b>${esc(g.term)}</b><span>${esc(g.reading||"")}</span></div>
+         ${g.english?`<p><strong>${esc(g.english)}</strong><small>${esc(g.englishReading||"")}</small></p>`:""}
+       </div>
+       <section class="vocab-highlight"><span>一言でいうと</span><strong>${esc(g.oneLine||g.meaning||"")}</strong></section>
+       <section class="vocab-section"><h4>意味</h4><p>${esc(g.meaning||"")}</p></section>
+       <section class="vocab-section memory"><h4>🧠 暗記ポイント</h4><p>${esc(g.memoryPoint||"")}</p></section>
+       <section class="vocab-section"><h4>🎯 何の論点で使われるか</h4><p>${esc(g.examPoint||"")}</p><div class="term-chips">${chips(g.topics)}</div></section>
+       <section class="vocab-section trap"><h4>⚠️ ひっかけ</h4><p>${esc(g.trap||"")}</p></section>
+       <section class="vocab-section"><h4>🔀 間違えやすいワード</h4><div class="compare-list">${confusable||'<p class="muted">特になし</p>'}</div></section>
+       <section class="vocab-section"><h4>🔗 関連ワード</h4><div class="term-chips">${chips(g.relatedWords)}</div></section>
+       <section class="vocab-section usage"><h4>✍️ 答案・問題での使い方</h4><p>${esc(g.usage||"")}</p></section>
+       <button type="button" class="vocab-close ghost" data-vocab-toggle="${esc(g.term)}">閉じる</button>
+     </div>
+     <div class="level-dots vocab-level" title="習熟度">${[1,2,3,4,5].map(n=>`<i class="${l>=n?"on":""}"></i>`).join("")}</div>
+   </article>`;
  }).join("");
+ $$("[data-vocab-toggle]").forEach(b=>b.onclick=()=>toggleVocabTerm(b.dataset.vocabToggle));
+ $$("[data-vocab-link]").forEach(b=>b.onclick=()=>openVocabTerm(b.dataset.vocabLink,true));
+}
+function findVocabCard(term){return $$(".vocab-card").find(c=>c.dataset.term===term)}
+function closeVocabCard(card){
+ if(!card)return;
+ card.classList.remove("open");
+ const detail=card.querySelector(".vocab-detail"), summary=card.querySelector(".vocab-summary");
+ if(detail)detail.classList.add("hidden"); if(summary)summary.setAttribute("aria-expanded","false");
+}
+function openVocabTerm(term,shouldScroll=false){
+ const card=findVocabCard(term); if(!card)return;
+ $$(".vocab-card").forEach(c=>{if(c!==card)closeVocabCard(c)});
+ card.classList.add("open");
+ const detail=card.querySelector(".vocab-detail"), summary=card.querySelector(".vocab-summary");
+ if(detail)detail.classList.remove("hidden"); if(summary)summary.setAttribute("aria-expanded","true");
+ if(shouldScroll)setTimeout(()=>card.scrollIntoView({behavior:"smooth",block:"start"}),30);
+}
+function toggleVocabTerm(term){
+ const card=findVocabCard(term); if(!card)return;
+ card.classList.contains("open")?closeVocabCard(card):openVocabTerm(term,false);
 }
 
 function renderCases(){
@@ -129,17 +184,12 @@ function renderCases(){
  $$("[data-outline]").forEach(b=>b.onclick=()=>outlineCase(b.dataset.outline));
  $$("[data-del]").forEach(b=>b.onclick=()=>{state.cases=state.cases.filter(c=>c.id!==b.dataset.del);save();renderCases()});
 }
-function esc(s=""){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]))}
 $("#caseForm").onsubmit=e=>{
  e.preventDefault();
  const id=$("#caseId").value||crypto.randomUUID();
  const c={id,title:$("#caseTitle").value,background:$("#caseBackground").value,problem:$("#caseProblem").value,root:$("#caseRoot").value,strategy:$("#caseStrategy").value,it:$("#caseIT").value,stake:$("#caseStake").value,risk:$("#caseRisk").value,kpi:$("#caseKpi").value};
  const ix=state.cases.findIndex(x=>x.id===id); if(ix>=0)state.cases[ix]=c; else state.cases.push(c); save(); clearCase(); renderCases();
 };
-function loadCase(id){const c=state.cases.find(x=>x.id===id); if(!c)return;
- ["Id","Title","Background","Problem","Root","Strategy","IT","Stake","Risk","Kpi"].forEach(k=>$("#case"+k).value=c[k.toLowerCase()]||c[k==="IT"?"it":k.toLowerCase()]||"");
- scrollTo({top:120,behavior:"smooth"});
-}
 function clearCase(){ $("#caseForm").reset(); $("#caseId").value=""; $("#outlineBox").classList.add("hidden")}
 $("#caseClear").onclick=clearCase;
 function outlineCase(id){
